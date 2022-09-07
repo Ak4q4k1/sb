@@ -1,0 +1,139 @@
+function importSettings(){
+  var start = "";
+  var end = "";
+  var want = "";
+  var range = "";
+
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("設定画面"); // sheetオブジェクトを取得
+  var datas = sheet.getDataRange().getValues();
+  // console.log(datas);
+  for(var i=0; i < datas.length; i++){
+    // console.log(datas[i]);
+    // console.log(datas[i].indexOf('項目'));
+    if(datas[i].indexOf('項目')+1){
+      var col = datas[i].indexOf('項目');
+      for(var j=0; j < datas.length-i; j++){
+        // console.log(datas[i+j][col]);  // タイトル
+        title = datas[i+j][col];
+        data = datas[i+j][col+1];
+        if(title == '始業時間（時）') start = data;
+        else if(title == '就業時間（時）') end = data;
+        else if(title == '確保したい時間（分）') want = data;
+        else if(title == '検索範囲（日）') range = data;
+      }
+    }
+  }
+  return [start, end, want, range];
+}
+
+function importEmails(){
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("メールアドレス"); // sheetオブジェクトを取得
+  var datas = sheet.getDataRange().getValues();
+  var email = "";
+  var emailList = [];
+  // console.log(datas);
+  for(var i=0; i < datas.length; i++){
+    if(datas[i].indexOf('氏名')+1){
+      var col = datas[i].indexOf('氏名');
+      for(var j=1; j < datas.length-i; j++){
+        // console.log(datas[i+j][col]);  // タイトル
+        email = datas[i+j][col+1];
+        console.log(email);
+        emailList.push(email);
+      }
+    }
+  }
+  return emailList;
+}
+
+function getCalendarEvent(mailList, start, end, want, range){
+  // var range = 5;
+  var calendars = mailList.map(function(mail){
+    return CalendarApp.getCalendarById(mail);
+  });
+  // var calendar = CalendarApp.getCalendarById(mail);
+  // console.log(calendars[0]);
+  var today = new Date();
+  // console.log(today);
+  // var events = calendar.getEventsForDay(today);
+  // console.log(events);
+
+  var availableStack = [];
+  for(var d=0; d < range; d++){
+    var date = new Date();
+    date.setDate(today.getDate() + d);
+
+    var startTimes = [];
+    var endTimes = [];
+
+    var continueFlag = false;
+    for(var c=0; c<calendars.length; c++){
+      var events = calendars[c].getEventsForDay(date);
+
+      for(var e=0; e < events.length; e++){
+        if(events[e].isAllDayEvent()){
+          continueFlag = true;
+          break;
+        }
+
+        var startTime = events[e].getStartTime();
+        var endTime = events[e].getEndTime();
+
+        startTimes.push(startTime.getTime());
+        endTimes.push(endTime.getTime());
+      }
+    }
+    if(continueFlag) continue;
+
+    var openingDateTime = date.setHours(start, 0, 0, 0);
+    var closingDateTime = date.setHours(end, 0, 0, 0);
+
+    startTimes.unshift(0);
+    startTimes.push(closingDateTime);
+
+    endTimes.unshift(openingDateTime);
+    endTimes.push(date.setHours(23, 59, 59, 999));
+
+    startTimes.sort();
+    endTimes.sort();
+
+    var dateString = convert2String(date.getTime(), false);
+
+    for(var i=0; i < startTimes.length-1; i++){
+      if(startTimes[i+1] - endTimes[i] >= want * 60 * 1000){
+        var startTimeString = convert2String(startTimes[i+1]);
+        var endTimeString = convert2String(endTimes[i]);
+
+        availableStack.push([dateString, Utilities.formatString("%s-%s", endTimeString, startTimeString)]);
+      }
+    }
+  }
+  
+  return availableStack;
+}
+
+function convert2String(date, withTime){
+  if (typeof withTime == "undefined") withTime = true;
+  var dateTime = new Date(date);
+  if(!withTime){
+    var month = dateTime.getMonth()+1;
+    var day = dateTime.getDate();
+    return Utilities.formatString("%d/%d", month, day);
+  } else {
+    var hours = dateTime.getHours();
+    var minutes = padding(dateTime.getMinutes());
+    return Utilities.formatString("%d:%s", hours, minutes);
+  }
+}
+
+function padding(num){
+  return ('00' + num).slice(-2);
+}
+
+function main(){
+  var [start, end, want, range] = importSettings();
+  var emailList = importEmails();
+  var output = getCalendarEvent(emailList, start, end, want, range);
+  console.log(output);
+}
+
